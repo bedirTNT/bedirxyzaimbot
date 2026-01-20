@@ -107,7 +107,7 @@ end)
 
 --// NO RECOIL
 local recoilActive = false
-local recoilStrength = 0.65
+local recoilStrength = 0.8
 local lastLook = cam.CFrame.LookVector
 
 UIS.InputBegan:Connect(function(input, gp)
