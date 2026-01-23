@@ -1,0 +1,383 @@
+--// SERVICES
+local Players = game:GetService("Players")
+local UIS = game:GetService("UserInputService")
+local RunService = game:GetService("RunService")
+
+local player = Players.LocalPlayer
+local Camera = workspace.CurrentCamera
+local mouse = player:GetMouse()
+
+--// GLOBAL SETTINGS
+_G.Settings = _G.Settings or {}
+_G.Settings.Blacklist = _G.Settings.Blacklist or {}
+local Settings = _G.Settings
+
+--// AIM SETTINGS
+local aimbotOn = false
+local teamCheckOn = false
+local antiRecoilOn = false
+local recoilStrength = 0.35
+local aimbotFOV = 100
+local aimbotSmoothness = 20
+local aimbotPart = "Head"
+
+--// STATES
+local MainMenuOpen = false
+local BLMenuOpen = false
+local fovVisible = true
+
+--// ================= MOUSE CONTROL (FIX) =================
+local function updateMouse()
+	if MainMenuOpen or BLMenuOpen then
+		UIS.MouseBehavior = Enum.MouseBehavior.Default
+		UIS.MouseIconEnabled = true
+	end
+end
+
+--// VISIBILITY CHECK
+local function isTargetVisible(targetPart)
+	if not targetPart then return false end
+	local params = RaycastParams.new()
+	params.FilterType = Enum.RaycastFilterType.Blacklist
+	params.FilterDescendantsInstances = { player.Character }
+	local res = workspace:Raycast(
+		Camera.CFrame.Position,
+		targetPart.Position - Camera.CFrame.Position,
+		params
+	)
+	return res and res.Instance:IsDescendantOf(targetPart.Parent)
+end
+
+--// GET CLOSEST
+local function getClosest()
+	local closest = nil
+	local closestScreenDist = aimbotFOV
+	local closestWorldDist = math.huge
+
+	for _, plr in ipairs(Players:GetPlayers()) do
+		if plr ~= player and plr.Character then
+			if teamCheckOn and plr.Team == player.Team then continue end
+			if table.find(Settings.Blacklist, plr.Name) then continue end
+
+			local part = plr.Character:FindFirstChild(aimbotPart)
+			local hrp = plr.Character:FindFirstChild("HumanoidRootPart")
+
+			local hum = plr.Character:FindFirstChildOfClass("Humanoid")
+if part and hrp and hum and hum.Health > 0 then
+				local pos, onScreen = Camera:WorldToViewportPoint(part.Position)
+				if onScreen then
+					-- FOV kontrolü (mouse mesafesi)
+					local screenDist =
+						(Vector2.new(mouse.X, mouse.Y) - Vector2.new(pos.X, pos.Y)).Magnitude
+
+					if screenDist <= aimbotFOV and isTargetVisible(part) then
+						-- Dünya mesafesi (gerçek yakınlık)
+						local worldDist =
+							(Camera.CFrame.Position - hrp.Position).Magnitude
+
+						-- Önce dünya mesafesi, eşitse mouse mesafesi
+						if worldDist < closestWorldDist
+							or (worldDist == closestWorldDist and screenDist < closestScreenDist) then
+
+							closestWorldDist = worldDist
+							closestScreenDist = screenDist
+							closest = part
+						end
+					end
+				end
+			end
+		end
+	end
+
+	return closest
+end
+
+--// FOV DRAW
+local fovCircle = Drawing.new("Circle")
+fovCircle.Thickness = 1.5
+fovCircle.Transparency = 0.6
+fovCircle.Filled = false
+
+--// ================= RENDER =================
+RunService.RenderStepped:Connect(function()
+	-- 🔒 OYUN İÇİNDE MOUSE ASLA KAÇMAZ
+	if aimbotOn and not MainMenuOpen and not BLMenuOpen then
+		UIS.MouseBehavior = Enum.MouseBehavior.LockCenter
+		UIS.MouseIconEnabled = false
+	end
+
+	fovCircle.Position = Vector2.new(Camera.ViewportSize.X/2, Camera.ViewportSize.Y/2)
+	fovCircle.Radius = aimbotFOV
+	fovCircle.Visible = fovVisible
+	fovCircle.Color = aimbotOn and Color3.fromRGB(255,0,0) or Color3.fromRGB(255,255,255)
+
+	-- AIM (RIGHT CLICK)
+	if aimbotOn and UIS:IsMouseButtonPressed(Enum.UserInputType.MouseButton2) then
+		local t = getClosest()
+		if t then
+			Camera.CFrame = Camera.CFrame:Lerp(
+				CFrame.new(Camera.CFrame.Position, t.Position),
+				1 / aimbotSmoothness
+			)
+		end
+	end
+
+	-- NO RECOIL
+	if antiRecoilOn
+		and UIS:IsMouseButtonPressed(Enum.UserInputType.MouseButton2)
+		and UIS:IsMouseButtonPressed(Enum.UserInputType.MouseButton1) then
+		Camera.CFrame = Camera.CFrame * CFrame.Angles(math.rad(-recoilStrength), 0, 0)
+	end
+end)
+
+--// ================= GUI: MAIN MENU =================
+local gui = Instance.new("ScreenGui")
+gui.Name = "NeonAimbot_MainUI"
+gui.ResetOnSpawn = false
+gui.Enabled = false
+gui.Parent = player:WaitForChild("PlayerGui")
+
+local main = Instance.new("Frame", gui)
+main.Size = UDim2.fromOffset(500, 420)
+main.Position = UDim2.fromScale(0.5, 0.5) - UDim2.fromOffset(250, 210)
+main.BackgroundColor3 = Color3.fromRGB(10, 10, 15)
+main.BackgroundTransparency = 0.25
+main.BorderSizePixel = 0
+main.Active = true
+main.Draggable = true
+Instance.new("UICorner", main).CornerRadius = UDim.new(0, 10)
+
+local stroke = Instance.new("UIStroke", main)
+stroke.Thickness = 2.5
+task.spawn(function()
+	while task.wait() do
+		stroke.Color = Color3.fromHSV((tick()*0.2)%1, 0.8, 1)
+	end
+end)
+
+local top = Instance.new("Frame", main)
+top.Size = UDim2.new(1,0,0,40)
+top.BackgroundColor3 = Color3.fromRGB(20,20,25)
+top.BackgroundTransparency = 0.3
+Instance.new("UICorner", top).CornerRadius = UDim.new(0,10)
+
+local title = Instance.new("TextLabel", top)
+title.Size = UDim2.new(1,-15,1,0)
+title.Position = UDim2.new(0,15,0,0)
+title.Text = "NEON AIMBOT & RECOIL | PRO"
+title.Font = Enum.Font.GothamBold
+title.TextSize = 14
+title.TextXAlignment = Enum.TextXAlignment.Left
+title.TextColor3 = Color3.new(1,1,1)
+title.BackgroundTransparency = 1
+
+local container = Instance.new("ScrollingFrame", main)
+container.Position = UDim2.new(0,15,0,50)
+container.Size = UDim2.new(1,-30,1,-65)
+container.BackgroundTransparency = 1
+container.ScrollBarThickness = 0
+container.CanvasSize = UDim2.new(0,0,1.4,0)
+
+local layout = Instance.new("UIListLayout", container)
+layout.Padding = UDim.new(0,12)
+
+local function createToggle(name, default, cb)
+	local b = Instance.new("TextButton", container)
+	b.Size = UDim2.new(1,0,0,38)
+	b.BackgroundTransparency = 0.4
+	b.BackgroundColor3 = default and Color3.fromRGB(0,180,100) or Color3.fromRGB(30,30,40)
+	b.Text = name..": "..(default and "ON" or "OFF")
+	b.Font = Enum.Font.GothamBold
+	b.TextSize = 13
+	b.TextColor3 = Color3.new(1,1,1)
+	Instance.new("UICorner", b)
+	b.MouseButton1Click:Connect(function()
+		default = not default
+		b.Text = name..": "..(default and "ON" or "OFF")
+		b.BackgroundColor3 = default and Color3.fromRGB(0,180,100) or Color3.fromRGB(30,30,40)
+		cb(default)
+	end)
+end
+
+local function createSlider(name, min, max, default, cb)
+	local holder = Instance.new("Frame", container)
+	holder.Size = UDim2.new(1,0,0,45)
+	holder.BackgroundTransparency = 1
+
+	local label = Instance.new("TextLabel", holder)
+	label.Size = UDim2.new(1,0,0,20)
+	label.BackgroundTransparency = 1
+	label.Font = Enum.Font.Gotham
+	label.TextSize = 12
+	label.TextColor3 = Color3.fromRGB(200,200,200)
+	label.Text = name..": "..string.format("%.2f", default)
+
+	local bg = Instance.new("Frame", holder)
+	bg.Size = UDim2.new(1,0,0,5)
+	bg.Position = UDim2.new(0,0,0,25)
+	bg.BackgroundColor3 = Color3.fromRGB(50,50,60)
+	Instance.new("UICorner", bg)
+
+	local fill = Instance.new("Frame", bg)
+	fill.Size = UDim2.new((default-min)/(max-min),0,1,0)
+	fill.BackgroundColor3 = Color3.fromRGB(0,255,255)
+	Instance.new("UICorner", fill)
+
+	local function update(input)
+		local pos = math.clamp((input.Position.X - bg.AbsolutePosition.X)/bg.AbsoluteSize.X, 0, 1)
+		fill.Size = UDim2.new(pos,0,1,0)
+		local v = min + pos*(max-min)
+		label.Text = name..": "..string.format("%.2f", v)
+		cb(v)
+	end
+
+	bg.InputBegan:Connect(function(i)
+		if i.UserInputType == Enum.UserInputType.MouseButton1 then
+			local c; c = UIS.InputChanged:Connect(function(m)
+				if m.UserInputType == Enum.UserInputType.MouseMovement then update(m) end
+			end)
+			UIS.InputEnded:Once(function() c:Disconnect() end)
+		end
+	end)
+end
+
+createToggle("Master Aimbot", false, function(v) aimbotOn = v end)
+createToggle("Team Check", false, function(v) teamCheckOn = v end)
+
+local boneBtn = Instance.new("TextButton", container)
+boneBtn.Size = UDim2.new(1,0,0,38)
+boneBtn.BackgroundTransparency = 0.4
+boneBtn.BackgroundColor3 = Color3.fromRGB(40,40,50)
+boneBtn.Text = "TARGET BONE: HEAD"
+boneBtn.Font = Enum.Font.GothamBold
+boneBtn.TextColor3 = Color3.new(1,1,1)
+Instance.new("UICorner", boneBtn)
+boneBtn.MouseButton1Click:Connect(function()
+	aimbotPart = (aimbotPart=="Head" and "UpperTorso" or "Head")
+	boneBtn.Text = "TARGET BONE: "..aimbotPart:upper()
+end)
+
+createSlider("Aimbot FOV", 10, 800, 100, function(v) aimbotFOV = v end)
+createSlider("Aim Smoothness", 1, 100, 20, function(v) aimbotSmoothness = v end)
+createToggle("Anti-Recoil (ADS+Fire)", false, function(v) antiRecoilOn = v end)
+createSlider("Recoil Strength", 0, 2, 0.35, function(v) recoilStrength = v end)
+
+--// ================= GUI: BLACKLIST =================
+local blGui = Instance.new("ScreenGui")
+blGui.Name = "Blacklist_UI"
+blGui.ResetOnSpawn = false
+blGui.Enabled = false
+blGui.Parent = player:WaitForChild("PlayerGui")
+
+local blFrame = Instance.new("Frame", blGui)
+blFrame.AnchorPoint = Vector2.new(0.5,0.5)
+blFrame.Position = UDim2.fromScale(0.5,0.5)
+blFrame.Size = UDim2.fromScale(0.36,0.6)
+blFrame.BackgroundColor3 = Color3.fromRGB(20,20,30)
+blFrame.Active = true
+blFrame.Draggable = true
+blFrame.BorderSizePixel = 0
+Instance.new("UICorner", blFrame).CornerRadius = UDim.new(0,12)
+
+local blTitle = Instance.new("TextLabel", blFrame)
+blTitle.Size = UDim2.fromScale(1,0.1)
+blTitle.BackgroundTransparency = 1
+blTitle.Text = "Blacklist Manager"
+blTitle.Font = Enum.Font.GothamBold
+blTitle.TextSize = 26
+blTitle.TextColor3 = Color3.fromRGB(170,0,255)
+
+local list = Instance.new("ScrollingFrame", blFrame)
+list.Position = UDim2.fromScale(0.03,0.12)
+list.Size = UDim2.fromScale(0.94,0.85)
+list.BackgroundTransparency = 1
+list.BorderSizePixel = 0
+list.ScrollBarThickness = 6
+
+local blLayout = Instance.new("UIListLayout", list)
+blLayout.Padding = UDim.new(0,6)
+
+local function addRow(plr)
+	if plr == player then return end
+	if list:FindFirstChild(plr.Name) then return end
+
+	local row = Instance.new("Frame", list)
+	row.Name = plr.Name
+	row.Size = UDim2.new(1,0,0,44)
+	row.BackgroundColor3 = Color3.fromRGB(35,35,45)
+	row.BorderSizePixel = 0
+	Instance.new("UICorner", row).CornerRadius = UDim.new(0,6)
+
+	local nameL = Instance.new("TextLabel", row)
+	nameL.Size = UDim2.fromScale(0.65,1)
+	nameL.Position = UDim2.fromScale(0.03,0)
+	nameL.BackgroundTransparency = 1
+	nameL.Text = plr.Name
+	nameL.Font = Enum.Font.GothamBold
+	nameL.TextSize = 20
+	nameL.TextXAlignment = Enum.TextXAlignment.Left
+	nameL.TextColor3 = Color3.new(1,1,1)
+
+	local btn = Instance.new("TextButton", row)
+	btn.Size = UDim2.fromScale(0.25,0.65)
+	btn.Position = UDim2.fromScale(0.72,0.18)
+	btn.Font = Enum.Font.GothamBold
+	btn.TextSize = 18
+	btn.TextColor3 = Color3.new(1,1,1)
+	btn.BorderSizePixel = 0
+	Instance.new("UICorner", btn).CornerRadius = UDim.new(0,6)
+
+	local function upd()
+		local i = table.find(Settings.Blacklist, plr.Name)
+		btn.Text = i and "Ignored" or "Add"
+		btn.BackgroundColor3 = i and Color3.fromRGB(120,120,120) or Color3.fromRGB(0,200,100)
+	end
+
+	btn.MouseButton1Click:Connect(function()
+		local i = table.find(Settings.Blacklist, plr.Name)
+		if i then table.remove(Settings.Blacklist, i) else table.insert(Settings.Blacklist, plr.Name) end
+		upd()
+	end)
+	upd()
+end
+
+local function refreshBlacklist()
+	for _,c in ipairs(list:GetChildren()) do
+		if c:IsA("Frame") then c:Destroy() end
+	end
+	for _,p in ipairs(Players:GetPlayers()) do addRow(p) end
+	task.wait()
+	list.CanvasSize = UDim2.new(0,0,0, blLayout.AbsoluteContentSize.Y+10)
+end
+
+Players.PlayerAdded:Connect(function() if BLMenuOpen then refreshBlacklist() end end)
+Players.PlayerRemoving:Connect(function() if BLMenuOpen then refreshBlacklist() end end)
+
+--// ================= INPUT (INSERT / DELETE FIX) =================
+UIS.InputBegan:Connect(function(input, gp)
+	if gp then return end
+
+	if input.KeyCode == Enum.KeyCode.LeftAlt then aimbotOn = not aimbotOn end
+	if input.KeyCode == Enum.KeyCode.V then antiRecoilOn = not antiRecoilOn end
+	if input.KeyCode == Enum.KeyCode.F then fovVisible = not fovVisible end
+
+	if input.KeyCode == Enum.KeyCode.Insert then
+		MainMenuOpen = not MainMenuOpen
+		BLMenuOpen = false
+		gui.Enabled = MainMenuOpen
+		blGui.Enabled = false
+	end
+
+	if input.KeyCode == Enum.KeyCode.Delete then
+		BLMenuOpen = not BLMenuOpen
+		MainMenuOpen = false
+		blGui.Enabled = BLMenuOpen
+		gui.Enabled = false
+		if BLMenuOpen then refreshBlacklist() end
+	end
+
+	updateMouse()
+end)
+
+UIS.MouseIconEnabled = true
+updateMouse()
